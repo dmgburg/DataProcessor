@@ -1,22 +1,19 @@
 package com.dmgburg.test;
 
-import com.google.common.annotations.VisibleForTesting;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.List;
-import java.util.Scanner;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -27,26 +24,30 @@ public class TsvParser {
     private final static String separator = "\t";
     private final ExecutorService executorService;
     private final int partitionSizeBytes;
+    private final Configuration configuration;
 
-    public TsvParser(ExecutorService executorService, int partitionSizeBytes) {
+    public TsvParser(ExecutorService executorService, int partitionSizeBytes, Configuration configuration) {
         this.executorService = executorService;
         this.partitionSizeBytes = partitionSizeBytes;
+        this.configuration = configuration;
     }
 
     public Data parse(final File file) throws IOException {
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, readOnlyMode)) {
-            List<String> headers = readHeaders(randomAccessFile);
+            Pair<List<String>, BitSet> parsedHeaders = readHeaders(randomAccessFile);
+            List<String> mappedHeaders = parsedHeaders.getLeft();
+            final BitSet columnFilter = parsedHeaders.getRight();
             List<Future<List<List<String>>>> futures = new ArrayList<>();
             do {
                 long start = randomAccessFile.getFilePointer();
                 randomAccessFile.skipBytes(partitionSizeBytes);
                 scrollToEndOfLine(randomAccessFile);
                 long end = randomAccessFile.getFilePointer();
-                Future<List<List<String>>> data = executorService.submit(() -> parsePartition(file, start, end));
+                Future<List<List<String>>> data = executorService.submit(() -> parsePartition(file, start, end, columnFilter));
                 futures.add(data);
             } while (randomAccessFile.getFilePointer() < randomAccessFile.length());
             Data.Builder builder = new Data.Builder();
-            builder.setHeaders(headers);
+            builder.setHeaders(mappedHeaders);
             for (Future<List<List<String>>> future : futures) {
                 try {
                     builder.merge(future.get());
@@ -60,9 +61,22 @@ public class TsvParser {
         }
     }
 
-    private List<String> readHeaders(RandomAccessFile randomAccessFile) throws IOException {
+    private Pair<List<String>, BitSet> readHeaders(RandomAccessFile randomAccessFile) throws IOException {
         String line = randomAccessFile.readLine();
-        return Arrays.asList(line.split(separator));
+        String[] inboundHeaders = line.split(separator);
+        Map<String, String> columnMapping = configuration.getColumnMapping();
+        List<String> headers = new ArrayList<>();
+        BitSet bitSet = new BitSet(inboundHeaders.length);
+        for (int i = 0; i < inboundHeaders.length; i++) {
+            String currentHeader = inboundHeaders[i];
+            if (columnMapping.containsKey(currentHeader)){
+                bitSet.set(i);
+                headers.add(columnMapping.get(currentHeader));
+            } else {
+                bitSet.clear(i);
+            }
+        }
+        return Pair.of(headers, bitSet);
     }
 
     private void scrollToEndOfLine(RandomAccessFile randomAccessFile) throws IOException {
@@ -71,14 +85,24 @@ public class TsvParser {
         }
     }
 
-    private List<List<String>> parsePartition(File file, long partitionStart, long partitionEnd) throws IOException {
+    private List<List<String>> parsePartition(File file, long partitionStart, long partitionEnd, BitSet columnFilter) throws IOException {
         MappedByteBuffer buffer = null;
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, readOnlyMode)) {
             buffer = randomAccessFile.getChannel().map(FileChannel.MapMode.READ_ONLY, partitionStart, partitionEnd - partitionStart);
             ArrayList<List<String>> result = new ArrayList<>();
             while (buffer.position() < buffer.capacity()) {
-                String line = readLine(buffer);
-                result.add(Arrays.asList(line.split(separator)));
+                String[] values = readLine(buffer).split(separator);
+                if (!configuration.getRowMapping().containsKey(values[0])){
+                    continue;
+                }
+                List<String> row = new ArrayList<>();
+                row.add(configuration.getRowMapping().get(values[0]));
+                for (int i = 1; i < values.length; i++) {
+                    if (columnFilter.get(i)){
+                        row.add(values[i]);
+                    }
+                }
+                result.add(row);
             }
             return result;
         } finally {

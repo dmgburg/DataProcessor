@@ -27,6 +27,14 @@ public class Data {
         private List<String> headers;
         private List<List<String>> data = new ArrayList<>();
 
+        public List<String> getHeaders() {
+            return headers;
+        }
+
+        public List<List<String>> getData() {
+            return data;
+        }
+
         public Builder setHeaders(List<String> headers) {
             this.headers = headers;
             return this;

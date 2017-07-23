@@ -10,29 +10,50 @@ import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-public class TsvParser {
-    private final static Logger log = LoggerFactory.getLogger(TsvParser.class);
+public class DataTranslator {
+    private final static Logger log = LoggerFactory.getLogger(DataTranslator.class);
     private static final String readOnlyMode = "r";
     private final static String separator = "\t";
     private final ExecutorService executorService;
     private final int partitionSizeBytes;
     private final Configuration configuration;
 
-    public TsvParser(ExecutorService executorService, int partitionSizeBytes, Configuration configuration) {
+    public DataTranslator(Configuration configuration) {
+        this(Executors.newSingleThreadExecutor(), 8192, configuration);
+    }
+
+    /**
+     *
+     * @param executorService - thread pool to be used for actual data parsing
+     * @param partitionSizeBytes - size of file partitions processed in one job
+     * @param configuration - com.dmgburg.test.Configuration object containing column and row mappings
+     */
+
+
+
+    public DataTranslator(ExecutorService executorService, int partitionSizeBytes, Configuration configuration) {
         this.executorService = executorService;
         this.partitionSizeBytes = partitionSizeBytes;
         this.configuration = configuration;
     }
 
+    /**
+     *
+     * @param file - File object of file to process
+     * @return Data object containing processed data
+     * @throws IOException
+     */
+
     public Data parse(final File file) throws IOException {
+        log.info("Going to process file {}. size: {}", file.getAbsolutePath(), file.length());
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, readOnlyMode)) {
             Pair<List<String>, BitSet> parsedHeaders = readHeaders(randomAccessFile);
             List<String> mappedHeaders = parsedHeaders.getLeft();
@@ -57,6 +78,7 @@ public class TsvParser {
                     throw new RuntimeException("File parsing failed", e);
                 }
             }
+            log.info("Processed file {}. Data contains {} rows", file.getAbsolutePath(), builder.getData().size());
             return builder.build();
         }
     }

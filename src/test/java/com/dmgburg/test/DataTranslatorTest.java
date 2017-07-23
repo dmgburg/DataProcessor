@@ -2,13 +2,11 @@ package com.dmgburg.test;
 
 import com.google.common.base.Joiner;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Test;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,9 +14,9 @@ import java.util.Map;
 import static com.google.common.util.concurrent.MoreExecutors.newDirectExecutorService;
 import static java.util.Arrays.asList;
 
-public class TsvParserTest {
+public class DataTranslatorTest {
     private File temp;
-    private TsvParser tsvParser;
+    private DataTranslator dataTranslator;
     private static final String[] line = new String[]{"Col1", "Col2", "Col3", "Col4", "Col5"}; // line length is 25 bytes
 
     @Test
@@ -32,7 +30,7 @@ public class TsvParserTest {
                 .setColumnMapping(columnMapping)
                 .setRowMapping(rowMapping)
                 .build();
-        tsvParser = new TsvParser(newDirectExecutorService(), 2000, configuration);// every line gets new page
+        dataTranslator = new DataTranslator(newDirectExecutorService(), 2000, configuration);// every line gets new page
 
         FileOutputStream stream = new FileOutputStream(temp);
         // header
@@ -42,7 +40,7 @@ public class TsvParserTest {
             stream.write(Joiner.on('\t').join(line).concat("\n").getBytes());
         }
 
-        Data data = tsvParser.parse(temp);
+        Data data = dataTranslator.parse(temp);
 
         Assert.assertArrayEquals(line, data.getHeaders().toArray());
         Assert.assertEquals(number, data.getData().size());
@@ -67,7 +65,7 @@ public class TsvParserTest {
                 .setRowMapping(rowMapping)
                 .build();
 
-        tsvParser = new TsvParser(newDirectExecutorService(), 2000, configuration);// every line gets new page
+        dataTranslator = new DataTranslator(newDirectExecutorService(), 2000, configuration);// every line gets new page
 
         FileOutputStream stream = new FileOutputStream(temp);
         // header
@@ -75,7 +73,7 @@ public class TsvParserTest {
         stream.write("Id1\tval21\tval31\tval41\tval51\n".getBytes());
         stream.write("Id2\tval22\tval32\tval42\tval52\n".getBytes());
 
-        Data data = tsvParser.parse(temp);
+        Data data = dataTranslator.parse(temp);
 
         Assert.assertArrayEquals(new String[]{"MyCol1", "MyCol3", "MyCol4"}, data.getHeaders().toArray());
         Assert.assertEquals(1, data.getData().size());
